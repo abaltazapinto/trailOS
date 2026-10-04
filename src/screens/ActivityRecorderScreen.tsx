@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import * as Location from 'expo-location';
 
 import type { Sport } from '../domain/activity';
 
@@ -20,7 +21,54 @@ const metrics = [
 export default function ActivityRecorderScreen() {
   const [sport, setSport] = useState<Sport>('hiking');
   const [state, setState] = useState<RecorderState>('idle');
+  const [permission, setPermission] = useState<Location.LocationPermissionResponse | null>(null);
+  const [permissionPending, setPermissionPending] = useState(true);
+  const [permissionError, setPermissionError] = useState<string | null>(null);
+  const permissionBusy = useRef(false);
   const isRecording = state === 'recording';
+  const canStart = permission?.granted === true && !permissionPending && !permissionError;
+
+  const checkPermission = useCallback(async (request = false, start = false) => {
+    if (permissionBusy.current) return;
+    permissionBusy.current = true;
+    setPermissionPending(true);
+    setPermissionError(null);
+    try {
+      const result = request
+        ? await Location.requestForegroundPermissionsAsync()
+        : await Location.getForegroundPermissionsAsync();
+      setPermission(result);
+      if (!result.granted) setState('idle');
+      else if (start) setState('recording');
+    } catch {
+      setPermission(null);
+      setState('idle');
+      setPermissionError('Location permission is unavailable. Please try again.');
+    } finally {
+      permissionBusy.current = false;
+      setPermissionPending(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void checkPermission();
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') void checkPermission();
+    });
+    return () => subscription.remove();
+  }, [checkPermission]);
+
+  const permissionMessage = permissionPending
+    ? 'Checking location permission…'
+    : permissionError ?? (
+      permission?.granted
+        ? 'Location permission granted.'
+        : permission?.status === 'denied'
+          ? permission.canAskAgain
+            ? 'Location permission denied. Allow access to start an activity.'
+            : 'Location permission denied. Enable location access in your device settings.'
+          : 'Location permission is required to start an activity.'
+    );
 
   return (
     <ScrollView
@@ -31,10 +79,29 @@ export default function ActivityRecorderScreen() {
       <Text style={styles.brand}>trailOS</Text>
       <Text style={styles.title}>Activity recorder</Text>
       <Text accessibilityLiveRegion="polite" style={styles.status}>
-        {isRecording ? 'Recording' : 'Idle · Ready to start'}
+        {isRecording ? 'Recording' : canStart ? 'Idle · Ready to start' : 'Idle'}
       </Text>
 
-      <Text style={styles.label}>Sport</Text>
+      <Text accessibilityLiveRegion="polite" style={styles.label}>
+        {permissionMessage}
+      </Text>
+      {!permission?.granted && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ disabled: permissionPending || permission?.canAskAgain === false }}
+          disabled={permissionPending || permission?.canAskAgain === false}
+          onPress={() => void checkPermission(true)}
+          style={({ pressed }) => [
+            styles.permissionAction,
+            (permissionPending || permission?.canAskAgain === false) && styles.disabled,
+            pressed && styles.pressed,
+          ]}
+        >
+          <Text style={styles.sportText}>Allow location access</Text>
+        </Pressable>
+      )}
+
+      <Text style={[styles.label, styles.sportLabel]}>Sport</Text>
       <View style={styles.sports}>
         {sports.map((option) => (
           <Pressable
@@ -77,10 +144,16 @@ export default function ActivityRecorderScreen() {
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={isRecording ? 'Stop activity' : 'Start activity'}
-        onPress={() => setState(isRecording ? 'idle' : 'recording')}
+        accessibilityState={{ disabled: !isRecording && !canStart }}
+        disabled={!isRecording && !canStart}
+        onPress={() => {
+          if (isRecording) setState('idle');
+          else if (canStart) void checkPermission(false, true);
+        }}
         style={({ pressed }) => [
           styles.action,
           isRecording && styles.stopAction,
+          !isRecording && !canStart && styles.disabled,
           pressed && styles.pressed,
         ]}
       >
@@ -97,6 +170,9 @@ const styles = StyleSheet.create({
   title: { color: '#18271e', fontSize: 30, fontWeight: '700' },
   status: { color: '#46574b', fontSize: 16, marginTop: 12, marginBottom: 32 },
   label: { color: '#46574b', fontSize: 16 },
+  sportLabel: { marginTop: 24 },
+  permissionAction: { minHeight: 48, paddingVertical: 12, justifyContent: 'center' },
+  disabled: { opacity: 0.5 },
   sports: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
   sport: {
     minHeight: 48,

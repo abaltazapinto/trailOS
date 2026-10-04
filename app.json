@@ -6,6 +6,14 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow trailOS to use your location for GPS activities while the app is open."
+        }
+      ]
+    ],
     "ios": {
       "supportsTablet": true
     },
