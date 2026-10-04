@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as Location from 'expo-location';
 
-import type { GpsTrackPoint, Sport } from '../domain/activity';
+import type { Activity, GpsTrackPoint, Sport } from '../domain/activity';
 import { calculateAverageSpeed, calculateDuration, calculateTrackDistance } from '../domain/activityMetrics';
+import { saveCompletedActivity } from '../storage/activities';
 
 type RecorderState = 'idle' | 'recording';
 
@@ -23,6 +24,12 @@ export default function ActivityRecorderScreen() {
   const [sport, setSport] = useState<Sport>('hiking');
   const [state, setState] = useState<RecorderState>('idle');
   const [trackPoints, setTrackPoints] = useState<GpsTrackPoint[]>([]);
+  const pointsRef = useRef<GpsTrackPoint[]>([]);
+  const watcherReady = useRef(false);
+  const [pendingActivity, setPendingActivity] = useState<Omit<Activity, 'id'> | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const saveBusy = useRef(false);
   const [duration, setDuration] = useState(0);
   const startTime = useRef<Date | null>(null);
   const stopWatching = useRef<(() => void) | null>(null);
@@ -32,7 +39,8 @@ export default function ActivityRecorderScreen() {
   const [permissionError, setPermissionError] = useState<string | null>(null);
   const permissionBusy = useRef(false);
   const isRecording = state === 'recording';
-  const canStart = permission?.granted === true && !permissionPending && !permissionError;
+  const canStart = permission?.granted === true && !permissionPending && !permissionError
+    && !saving && !pendingActivity;
   const distance = useMemo(() => calculateTrackDistance(trackPoints), [trackPoints]);
   const averageSpeed = calculateAverageSpeed(distance, duration);
   const metrics = [
@@ -50,6 +58,47 @@ export default function ActivityRecorderScreen() {
     setState('idle');
   }, []);
 
+  const persistActivity = async (activity: Omit<Activity, 'id'>) => {
+    if (saveBusy.current) return;
+    saveBusy.current = true;
+    setSaving(true);
+    setPendingActivity(activity);
+    setSaveMessage('Saving activity…');
+    try {
+      await saveCompletedActivity(activity);
+      setPendingActivity(null);
+      setSaveMessage('Activity saved on this device.');
+    } catch {
+      setSaveMessage('Could not save activity. Please retry before starting another activity.');
+    } finally {
+      saveBusy.current = false;
+      setSaving(false);
+    }
+  };
+
+  const finishRecording = () => {
+    const startedAt = startTime.current;
+    const ready = watcherReady.current;
+    const endTime = new Date();
+    stopRecording();
+    if (!startedAt || !ready) {
+      setSaveMessage('GPS was not ready. Activity was not saved.');
+      return;
+    }
+    const completedDuration = calculateDuration(startedAt, endTime);
+    const completedDistance = calculateTrackDistance(pointsRef.current);
+    void persistActivity({
+      source: 'phone-gps',
+      sport,
+      startTime: startedAt,
+      endTime,
+      duration: completedDuration,
+      distance: completedDistance,
+      averageSpeed: calculateAverageSpeed(completedDistance, completedDuration),
+      trackPoints: pointsRef.current,
+    });
+  };
+
   const checkPermission = useCallback(async (request = false, start = false) => {
     if (permissionBusy.current) return;
     permissionBusy.current = true;
@@ -62,10 +111,13 @@ export default function ActivityRecorderScreen() {
       setPermission(result);
       if (!result.granted) stopRecording();
       else if (start) {
+        pointsRef.current = [];
+        watcherReady.current = false;
         setTrackPoints([]);
         setDuration(0);
         startTime.current = new Date();
         setRecordingError(null);
+        setSaveMessage(null);
         setState('recording');
       }
     } catch {
@@ -108,6 +160,7 @@ export default function ActivityRecorderScreen() {
 
     const cleanup = () => {
       active = false;
+      watcherReady.current = false;
       subscription?.remove();
       subscription = undefined;
       if (stopWatching.current === cleanup) stopWatching.current = null;
@@ -132,13 +185,17 @@ export default function ActivityRecorderScreen() {
               timestamp: new Date(location.timestamp),
               ...(location.coords.altitude != null ? { elevation: location.coords.altitude } : {}),
             };
-            setTrackPoints((previous) => [...previous, point]);
+            pointsRef.current = [...pointsRef.current, point];
+            setTrackPoints(pointsRef.current);
           },
           handleError,
         );
         // Stop may happen before the asynchronous watcher setup finishes.
         if (!active) watcher.remove();
-        else subscription = watcher;
+        else {
+          subscription = watcher;
+          watcherReady.current = true;
+        }
       } catch {
         handleError();
       }
@@ -230,6 +287,18 @@ export default function ActivityRecorderScreen() {
         ))}
       </View>
       <Text style={styles.hint}>Recorded points: {trackPoints.length}</Text>
+      {saveMessage && (
+        <Text accessibilityLiveRegion="polite" style={styles.hint}>{saveMessage}</Text>
+      )}
+      {pendingActivity && !saving && (
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => void persistActivity(pendingActivity)}
+          style={styles.permissionAction}
+        >
+          <Text style={styles.sportText}>Retry saving activity</Text>
+        </Pressable>
+      )}
       {recordingError && (
         <Text accessibilityRole="alert" style={styles.hint}>{recordingError}</Text>
       )}
@@ -240,7 +309,7 @@ export default function ActivityRecorderScreen() {
         accessibilityState={{ disabled: !isRecording && !canStart }}
         disabled={!isRecording && !canStart}
         onPress={() => {
-          if (isRecording) stopRecording();
+          if (isRecording) finishRecording();
           else if (canStart) void checkPermission(false, true);
         }}
         style={({ pressed }) => [

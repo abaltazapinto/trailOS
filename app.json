@@ -12,7 +12,8 @@
         {
           "locationWhenInUsePermission": "Allow trailOS to use your location for GPS activities while the app is open."
         }
-      ]
+      ],
+      "expo-sqlite"
     ],
     "ios": {
       "supportsTablet": true
