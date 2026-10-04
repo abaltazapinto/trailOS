@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as Location from 'expo-location';
 
-import type { Sport } from '../domain/activity';
+import type { GpsTrackPoint, Sport } from '../domain/activity';
 
 type RecorderState = 'idle' | 'recording';
 
@@ -21,6 +21,8 @@ const metrics = [
 export default function ActivityRecorderScreen() {
   const [sport, setSport] = useState<Sport>('hiking');
   const [state, setState] = useState<RecorderState>('idle');
+  const [trackPoints, setTrackPoints] = useState<GpsTrackPoint[]>([]);
+  const [recordingError, setRecordingError] = useState<string | null>(null);
   const [permission, setPermission] = useState<Location.LocationPermissionResponse | null>(null);
   const [permissionPending, setPermissionPending] = useState(true);
   const [permissionError, setPermissionError] = useState<string | null>(null);
@@ -39,7 +41,11 @@ export default function ActivityRecorderScreen() {
         : await Location.getForegroundPermissionsAsync();
       setPermission(result);
       if (!result.granted) setState('idle');
-      else if (start) setState('recording');
+      else if (start) {
+        setTrackPoints([]);
+        setRecordingError(null);
+        setState('recording');
+      }
     } catch {
       setPermission(null);
       setState('idle');
@@ -57,6 +63,52 @@ export default function ActivityRecorderScreen() {
     });
     return () => subscription.remove();
   }, [checkPermission]);
+
+  useEffect(() => {
+    if (!isRecording) return;
+
+    let active = true;
+    let subscription: Location.LocationSubscription | undefined;
+
+    const cleanup = () => {
+      active = false;
+      subscription?.remove();
+      subscription = undefined;
+    };
+    const handleError = () => {
+      if (!active) return;
+      cleanup();
+      setRecordingError('GPS recording stopped. Check location services and try again.');
+      setState('idle');
+    };
+
+    const startWatching = async () => {
+      try {
+        const watcher = await Location.watchPositionAsync(
+          { accuracy: Location.Accuracy.High, timeInterval: 1000, distanceInterval: 1 },
+          (location) => {
+            if (!active) return;
+            const point: GpsTrackPoint = {
+              latitude: location.coords.latitude,
+              longitude: location.coords.longitude,
+              timestamp: new Date(location.timestamp),
+              ...(location.coords.altitude != null ? { elevation: location.coords.altitude } : {}),
+            };
+            setTrackPoints((previous) => [...previous, point]);
+          },
+          handleError,
+        );
+        // Stop may happen before the asynchronous watcher setup finishes.
+        if (!active) watcher.remove();
+        else subscription = watcher;
+      } catch {
+        handleError();
+      }
+    };
+
+    void startWatching();
+    return cleanup;
+  }, [isRecording]);
 
   const permissionMessage = permissionPending
     ? 'Checking location permission…'
@@ -140,6 +192,10 @@ export default function ActivityRecorderScreen() {
         ))}
       </View>
       <Text style={styles.hint}>Metrics are placeholders for now.</Text>
+      <Text style={styles.hint}>Recorded points: {trackPoints.length}</Text>
+      {recordingError && (
+        <Text accessibilityRole="alert" style={styles.hint}>{recordingError}</Text>
+      )}
 
       <Pressable
         accessibilityRole="button"
