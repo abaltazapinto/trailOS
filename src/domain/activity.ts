@@ -23,6 +23,12 @@ export interface Activity {
   startTime: Date;
   /** Absent while the activity is in progress. */
   endTime?: Date;
+  /** Duration in seconds. */
+  duration: number;
+  /** Distance in meters. */
+  distance: number;
+  /** Average speed in meters per second. */
+  averageSpeed: number;
   /** Track points in traversal order. */
   trackPoints: GpsTrackPoint[];
   /** Total elevation gained in meters, when available. */
