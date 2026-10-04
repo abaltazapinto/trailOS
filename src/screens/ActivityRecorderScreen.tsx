@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as Location from 'expo-location';
 
 import type { GpsTrackPoint, Sport } from '../domain/activity';
+import { calculateAverageSpeed, calculateDuration, calculateTrackDistance } from '../domain/activityMetrics';
 
 type RecorderState = 'idle' | 'recording';
 
@@ -12,16 +13,19 @@ const sports: { value: Sport; label: string }[] = [
   { value: 'cycling', label: 'Cycling' },
 ];
 
-const metrics = [
-  { label: 'Duration', value: '00:00:00' },
-  { label: 'Distance', value: '0.00 km' },
-  { label: 'Average speed', value: '0.0 km/h' },
-];
+function formatDuration(duration: number): string {
+  const seconds = Math.floor(duration);
+  return [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60]
+    .map((value) => String(value).padStart(2, '0')).join(':');
+}
 
 export default function ActivityRecorderScreen() {
   const [sport, setSport] = useState<Sport>('hiking');
   const [state, setState] = useState<RecorderState>('idle');
   const [trackPoints, setTrackPoints] = useState<GpsTrackPoint[]>([]);
+  const [duration, setDuration] = useState(0);
+  const startTime = useRef<Date | null>(null);
+  const stopWatching = useRef<(() => void) | null>(null);
   const [recordingError, setRecordingError] = useState<string | null>(null);
   const [permission, setPermission] = useState<Location.LocationPermissionResponse | null>(null);
   const [permissionPending, setPermissionPending] = useState(true);
@@ -29,6 +33,22 @@ export default function ActivityRecorderScreen() {
   const permissionBusy = useRef(false);
   const isRecording = state === 'recording';
   const canStart = permission?.granted === true && !permissionPending && !permissionError;
+  const distance = useMemo(() => calculateTrackDistance(trackPoints), [trackPoints]);
+  const averageSpeed = calculateAverageSpeed(distance, duration);
+  const metrics = [
+    { label: 'Duration', value: formatDuration(duration) },
+    { label: 'Distance', value: `${(distance / 1000).toFixed(2)} km` },
+    { label: 'Average speed', value: `${(averageSpeed * 3.6).toFixed(1)} km/h` },
+  ];
+
+  const stopRecording = useCallback(() => {
+    stopWatching.current?.();
+    if (startTime.current) {
+      setDuration(calculateDuration(startTime.current, new Date()));
+      startTime.current = null;
+    }
+    setState('idle');
+  }, []);
 
   const checkPermission = useCallback(async (request = false, start = false) => {
     if (permissionBusy.current) return;
@@ -40,21 +60,23 @@ export default function ActivityRecorderScreen() {
         ? await Location.requestForegroundPermissionsAsync()
         : await Location.getForegroundPermissionsAsync();
       setPermission(result);
-      if (!result.granted) setState('idle');
+      if (!result.granted) stopRecording();
       else if (start) {
         setTrackPoints([]);
+        setDuration(0);
+        startTime.current = new Date();
         setRecordingError(null);
         setState('recording');
       }
     } catch {
       setPermission(null);
-      setState('idle');
+      stopRecording();
       setPermissionError('Location permission is unavailable. Please try again.');
     } finally {
       permissionBusy.current = false;
       setPermissionPending(false);
     }
-  }, []);
+  }, [stopRecording]);
 
   useEffect(() => {
     void checkPermission();
@@ -66,6 +88,20 @@ export default function ActivityRecorderScreen() {
 
   useEffect(() => {
     if (!isRecording) return;
+    let active = true;
+    const timer = setInterval(() => {
+      if (active && startTime.current) {
+        setDuration(calculateDuration(startTime.current, new Date()));
+      }
+    }, 1000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [isRecording]);
+
+  useEffect(() => {
+    if (!isRecording) return;
 
     let active = true;
     let subscription: Location.LocationSubscription | undefined;
@@ -74,12 +110,14 @@ export default function ActivityRecorderScreen() {
       active = false;
       subscription?.remove();
       subscription = undefined;
+      if (stopWatching.current === cleanup) stopWatching.current = null;
     };
+    stopWatching.current = cleanup;
     const handleError = () => {
       if (!active) return;
       cleanup();
       setRecordingError('GPS recording stopped. Check location services and try again.');
-      setState('idle');
+      stopRecording();
     };
 
     const startWatching = async () => {
@@ -108,7 +146,7 @@ export default function ActivityRecorderScreen() {
 
     void startWatching();
     return cleanup;
-  }, [isRecording]);
+  }, [isRecording, stopRecording]);
 
   const permissionMessage = permissionPending
     ? 'Checking location permission…'
@@ -191,7 +229,6 @@ export default function ActivityRecorderScreen() {
           </View>
         ))}
       </View>
-      <Text style={styles.hint}>Metrics are placeholders for now.</Text>
       <Text style={styles.hint}>Recorded points: {trackPoints.length}</Text>
       {recordingError && (
         <Text accessibilityRole="alert" style={styles.hint}>{recordingError}</Text>
@@ -203,7 +240,7 @@ export default function ActivityRecorderScreen() {
         accessibilityState={{ disabled: !isRecording && !canStart }}
         disabled={!isRecording && !canStart}
         onPress={() => {
-          if (isRecording) setState('idle');
+          if (isRecording) stopRecording();
           else if (canStart) void checkPermission(false, true);
         }}
         style={({ pressed }) => [
