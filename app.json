@@ -13,12 +13,14 @@
           "locationWhenInUsePermission": "Allow trailOS to use your location for GPS activities while the app is open."
         }
       ],
-      "expo-sqlite"
+      "expo-sqlite",
+      "expo-secure-store"
     ],
     "ios": {
       "supportsTablet": true
     },
     "android": {
+      "package": "com.trailos.app",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",

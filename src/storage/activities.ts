@@ -1,6 +1,6 @@
 import * as SQLite from 'expo-sqlite';
 
-import type { Activity, GpsTrackPoint } from '../domain/activity';
+import type { Activity, ActivitySource, GpsTrackPoint } from '../domain/activity';
 
 let database: Promise<SQLite.SQLiteDatabase> | undefined;
 
@@ -83,6 +83,25 @@ export async function saveCompletedActivity(activity: Omit<Activity, 'id'>): Pro
     }
   });
   return id;
+}
+
+/** Finds an activity already stored from the same source and start time, e.g. a re-imported file. */
+export async function findActivityId(source: ActivitySource, startTime: Date): Promise<string | null> {
+  const db = await getDatabase();
+  const row = await db.getFirstAsync<{ id: string }>(
+    'SELECT id FROM activities WHERE source = ? AND startTime = ?',
+    source, startTime.toISOString(),
+  );
+  return row?.id ?? null;
+}
+
+/** Start time of the most recent stored activity from a source, or null when there is none. */
+export async function getLatestActivityStart(source: ActivitySource): Promise<Date | null> {
+  const db = await getDatabase();
+  const row = await db.getFirstAsync<{ startTime: string | null }>(
+    'SELECT MAX(startTime) AS startTime FROM activities WHERE source = ?', source,
+  );
+  return row?.startTime ? new Date(row.startTime) : null;
 }
 
 type ActivityRow = Omit<Activity, 'startTime' | 'endTime' | 'trackPoints' | 'elevationGain'> & {

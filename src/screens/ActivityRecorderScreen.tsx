@@ -4,21 +4,14 @@ import * as Location from 'expo-location';
 
 import type { Activity, GpsTrackPoint, Sport } from '../domain/activity';
 import { calculateAverageSpeed, calculateDuration, calculateTrackDistance } from '../domain/activityMetrics';
+import GarminCard from '../integrations/garmin/GarminCard';
 import { saveCompletedActivity } from '../storage/activities';
+import { formatDistance, formatDuration, sportLabels } from '../ui/format';
 
 type RecorderState = 'idle' | 'recording';
 
-const sports: { value: Sport; label: string }[] = [
-  { value: 'hiking', label: 'Hiking' },
-  { value: 'running', label: 'Running' },
-  { value: 'cycling', label: 'Cycling' },
-];
-
-function formatDuration(duration: number): string {
-  const seconds = Math.floor(duration);
-  return [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60]
-    .map((value) => String(value).padStart(2, '0')).join(':');
-}
+const sports = (Object.keys(sportLabels) as Sport[])
+  .map((value) => ({ value, label: sportLabels[value] }));
 
 export default function ActivityRecorderScreen() {
   const [sport, setSport] = useState<Sport>('hiking');
@@ -45,7 +38,7 @@ export default function ActivityRecorderScreen() {
   const averageSpeed = calculateAverageSpeed(distance, duration);
   const metrics = [
     { label: 'Duration', value: formatDuration(duration) },
-    { label: 'Distance', value: `${(distance / 1000).toFixed(2)} km` },
+    { label: 'Distance', value: formatDistance(distance) },
     { label: 'Average speed', value: `${(averageSpeed * 3.6).toFixed(1)} km/h` },
   ];
 
@@ -321,6 +314,8 @@ export default function ActivityRecorderScreen() {
       >
         <Text style={styles.actionText}>{isRecording ? 'Stop' : 'Start'}</Text>
       </Pressable>
+
+      <GarminCard disabled={isRecording || saving} />
     </ScrollView>
   );
 }
