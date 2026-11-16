@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as Location from 'expo-location';
+import { router } from 'expo-router';
 import { useCurrentPosition } from '@maplibre/maplibre-react-native';
 
 import RouteMap from '../components/RouteMap';
 import type { Activity, GpsTrackPoint, Sport } from '../domain/activity';
 import { calculateAverageSpeed, calculateDuration, calculateTrackDistance } from '../domain/activityMetrics';
-import GarminCard from '../integrations/garmin/GarminCard';
 import { saveCompletedActivity } from '../storage/activities';
 import ActivityButton from '../ui/ActivityButton';
 import { formatDistance, formatDuration, formatSpeedForSport, sportLabels } from '../ui/format';
@@ -332,7 +332,13 @@ export default function ActivityRecorderScreen() {
         style={styles.action}
       />
 
-      <GarminCard disabled={isRecording || saving} />
+      <ActivityButton
+        label="Garmin sync and import"
+        variant="secondary"
+        disabled={isRecording || saving}
+        onPress={() => router.push('/garmin')}
+        style={styles.action}
+      />
     </ScrollView>
   );
 }
