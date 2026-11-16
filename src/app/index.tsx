@@ -1,1 +1,1 @@
-export { default } from '../screens/ActivityRecorderScreen';
+export { default } from '../features/recorder/RecorderScreen';
