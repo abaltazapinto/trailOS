@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 
-import { formatDistance, formatDuration, sportLabels } from '../../ui/format';
+import ActivityButton from '../../ui/ActivityButton';
+import { formatDistance, formatDuration, formatElevation, sportLabels } from '../../ui/format';
+import { colors, radius, spacing, typography } from '../../ui/theme';
 import { deleteApiKey, loadApiKey, saveApiKey } from './apiKeyStore';
 import { importFitFile, syncGarminActivities, type GarminImportResult } from './importer';
 import { GarminApiError, GarminPersonalApi, PERSONAL_API_KEY_URL } from './personalApi';
@@ -28,10 +30,13 @@ function ResultRow({ result }: { result: GarminImportResult }) {
     );
   }
   const { activity } = result;
+  const distance = formatDistance(activity.distance);
+  const duration = formatDuration(activity.duration);
+  const elevation = activity.elevationGain !== undefined ? formatElevation(activity.elevationGain) : null;
   const details = [
-    formatDistance(activity.distance),
-    formatDuration(activity.duration),
-    activity.elevationGain !== undefined ? `↑ ${Math.round(activity.elevationGain)} m` : null,
+    `${distance.value} ${distance.unit}`,
+    duration.value,
+    elevation ? `↑ ${elevation.value} ${elevation.unit}` : null,
   ].filter(Boolean).join(' · ');
   return (
     <View style={styles.result}>
@@ -44,30 +49,6 @@ function ResultRow({ result }: { result: GarminImportResult }) {
         {activity.trackPoints.length} GPS points · Garmin sport: {result.garminSport}
       </Text>
     </View>
-  );
-}
-
-function Action({ label, onPress, disabled, primary = false }: {
-  label: string;
-  onPress: () => void;
-  disabled: boolean;
-  primary?: boolean;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ disabled }}
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.action,
-        primary && styles.primaryAction,
-        disabled && styles.disabled,
-        pressed && styles.pressed,
-      ]}
-    >
-      <Text style={[styles.actionText, primary && styles.primaryActionText]}>{label}</Text>
-    </Pressable>
   );
 }
 
@@ -173,16 +154,17 @@ export default function GarminCard({ disabled }: { disabled: boolean }) {
             editable={!busy}
             onChangeText={setKeyInput}
             placeholder="Personal API key"
-            placeholderTextColor="#7b8a7f"
+            placeholderTextColor={colors.textMuted}
+            selectionColor={colors.accent}
             secureTextEntry
             style={styles.input}
             value={keyInput}
           />
-          <Action
+          <ActivityButton
             label={task === 'connecting' ? 'Connecting…' : 'Connect Garmin account'}
             onPress={() => void connect()}
             disabled={busy || keyInput.trim() === ''}
-            primary
+            variant="primary"
           />
         </>
       )}
@@ -190,20 +172,21 @@ export default function GarminCard({ disabled }: { disabled: boolean }) {
       {connection === 'connected' && (
         <>
           <Text style={styles.hint}>Connected to Garmin Connect.</Text>
-          <Action
+          <ActivityButton
             label={task === 'syncing' ? 'Syncing…' : 'Sync Garmin activities'}
             onPress={() => void sync()}
             disabled={busy}
-            primary
+            variant="primary"
           />
-          <Action label="Disconnect" onPress={() => void disconnect()} disabled={busy} />
+          <ActivityButton label="Disconnect" variant="secondary" onPress={() => void disconnect()} disabled={busy} />
         </>
       )}
 
       <Text style={[styles.hint, styles.fallback]}>
         No connection? Import a .fit file copied from the watch, or a Garmin Connect export.
       </Text>
-      <Action
+      <ActivityButton
+        variant="secondary"
         label={task === 'importing' ? 'Importing…' : 'Import .fit file'}
         onPress={() => void importFile()}
         disabled={busy}
@@ -219,38 +202,24 @@ export default function GarminCard({ disabled }: { disabled: boolean }) {
 }
 
 const styles = StyleSheet.create({
-  card: { marginTop: 32, backgroundColor: '#fff', borderRadius: 16, padding: 24, gap: 12 },
-  title: { color: '#18271e', fontSize: 22, fontWeight: '700' },
-  hint: { color: '#46574b', fontSize: 14 },
-  fallback: { marginTop: 12 },
-  link: { color: '#28563a', fontSize: 16, fontWeight: '600', textDecorationLine: 'underline', paddingVertical: 8 },
+  card: { marginTop: spacing.xxl, backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.xl, gap: spacing.md },
+  title: { ...typography.title, color: colors.textPrimary },
+  hint: { ...typography.caption, color: colors.textSecondary },
+  fallback: { marginTop: spacing.md },
+  link: { ...typography.body, color: colors.accent, fontWeight: '600', textDecorationLine: 'underline', paddingVertical: spacing.sm },
   input: {
     minHeight: 48,
     borderWidth: 1,
-    borderColor: '#63786a',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    color: '#18271e',
-    fontSize: 16,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.lg,
+    backgroundColor: colors.surfaceRaised,
+    color: colors.textPrimary,
+    ...typography.body,
   },
-  action: {
-    minHeight: 48,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderWidth: 1,
-    borderColor: '#28563a',
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  primaryAction: { backgroundColor: '#28563a' },
-  actionText: { color: '#28563a', fontSize: 16, fontWeight: '600' },
-  primaryActionText: { color: '#fff' },
-  disabled: { opacity: 0.5 },
-  pressed: { opacity: 0.75 },
-  feedback: { gap: 12 },
-  result: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#c9d3cb', paddingTop: 12, gap: 4 },
-  resultTitle: { color: '#18271e', fontSize: 16, fontWeight: '600' },
-  resultDetails: { color: '#18271e', fontSize: 15 },
-  error: { color: '#a13232', fontSize: 14 },
+  feedback: { gap: spacing.md },
+  result: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, paddingTop: spacing.md, gap: spacing.xs },
+  resultTitle: { ...typography.body, color: colors.textPrimary, fontWeight: '600' },
+  resultDetails: { ...typography.body, color: colors.textPrimary, fontVariant: ['tabular-nums'] },
+  error: { ...typography.caption, color: colors.danger },
 });

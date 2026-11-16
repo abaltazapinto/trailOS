@@ -6,7 +6,10 @@ import type { Activity, GpsTrackPoint, Sport } from '../domain/activity';
 import { calculateAverageSpeed, calculateDuration, calculateTrackDistance } from '../domain/activityMetrics';
 import GarminCard from '../integrations/garmin/GarminCard';
 import { saveCompletedActivity } from '../storage/activities';
-import { formatDistance, formatDuration, sportLabels } from '../ui/format';
+import ActivityButton from '../ui/ActivityButton';
+import { formatDistance, formatDuration, formatSpeedForSport, sportLabels } from '../ui/format';
+import Metric from '../ui/Metric';
+import { colors, radius, spacing, typography } from '../ui/theme';
 
 type RecorderState = 'idle' | 'recording';
 
@@ -37,9 +40,9 @@ export default function ActivityRecorderScreen() {
   const distance = useMemo(() => calculateTrackDistance(trackPoints), [trackPoints]);
   const averageSpeed = calculateAverageSpeed(distance, duration);
   const metrics = [
-    { label: 'Duration', value: formatDuration(duration) },
-    { label: 'Distance', value: formatDistance(distance) },
-    { label: 'Average speed', value: `${(averageSpeed * 3.6).toFixed(1)} km/h` },
+    { label: 'Duration', ...formatDuration(duration) },
+    { label: 'Distance', ...formatDistance(distance) },
+    { label: sport === 'cycling' ? 'Average speed' : 'Average pace', ...formatSpeedForSport(averageSpeed, sport) },
   ];
 
   const stopRecording = useCallback(() => {
@@ -273,10 +276,7 @@ export default function ActivityRecorderScreen() {
 
       <View style={styles.metrics}>
         {metrics.map((metric) => (
-          <View key={metric.label} style={styles.metric}>
-            <Text style={styles.label}>{metric.label}</Text>
-            <Text style={styles.metricValue}>{metric.value}</Text>
-          </View>
+          <Metric key={metric.label} {...metric} />
         ))}
       </View>
       <Text style={styles.hint}>Recorded points: {trackPoints.length}</Text>
@@ -296,24 +296,17 @@ export default function ActivityRecorderScreen() {
         <Text accessibilityRole="alert" style={styles.hint}>{recordingError}</Text>
       )}
 
-      <Pressable
-        accessibilityRole="button"
+      <ActivityButton
+        label={isRecording ? 'Stop' : 'Start'}
+        variant={isRecording ? 'danger' : 'primary'}
         accessibilityLabel={isRecording ? 'Stop activity' : 'Start activity'}
-        accessibilityState={{ disabled: !isRecording && !canStart }}
         disabled={!isRecording && !canStart}
         onPress={() => {
           if (isRecording) finishRecording();
           else if (canStart) void checkPermission(false, true);
         }}
-        style={({ pressed }) => [
-          styles.action,
-          isRecording && styles.stopAction,
-          !isRecording && !canStart && styles.disabled,
-          pressed && styles.pressed,
-        ]}
-      >
-        <Text style={styles.actionText}>{isRecording ? 'Stop' : 'Start'}</Text>
-      </Pressable>
+        style={styles.action}
+      />
 
       <GarminCard disabled={isRecording || saving} />
     </ScrollView>
@@ -321,41 +314,30 @@ export default function ActivityRecorderScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#f5f7f3' },
-  content: { paddingHorizontal: 24, paddingTop: 64, paddingBottom: 48 },
-  brand: { color: '#346345', fontSize: 18, fontWeight: '700', marginBottom: 12 },
-  title: { color: '#18271e', fontSize: 30, fontWeight: '700' },
-  status: { color: '#46574b', fontSize: 16, marginTop: 12, marginBottom: 32 },
-  label: { color: '#46574b', fontSize: 16 },
-  sportLabel: { marginTop: 24 },
-  permissionAction: { minHeight: 48, paddingVertical: 12, justifyContent: 'center' },
+  screen: { flex: 1, backgroundColor: colors.bg },
+  content: { paddingHorizontal: spacing.xl, paddingTop: spacing.xxl * 2, paddingBottom: spacing.xl * 2 },
+  brand: { ...typography.body, color: colors.accent, fontWeight: '700', marginBottom: spacing.md },
+  title: { ...typography.title, color: colors.textPrimary },
+  status: { ...typography.body, color: colors.textSecondary, marginTop: spacing.md, marginBottom: spacing.xxl },
+  label: { ...typography.body, color: colors.textSecondary },
+  sportLabel: { marginTop: spacing.xl },
+  permissionAction: { minHeight: 48, paddingVertical: spacing.md, justifyContent: 'center' },
   disabled: { opacity: 0.5 },
-  sports: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
+  sports: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md },
   sport: {
     minHeight: 48,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
     borderWidth: 1,
-    borderColor: '#63786a',
-    borderRadius: 12,
+    borderColor: colors.border,
+    borderRadius: radius.md,
     justifyContent: 'center',
   },
-  selectedSport: { backgroundColor: '#28563a', borderColor: '#28563a' },
-  sportText: { color: '#28563a', fontSize: 16, fontWeight: '600' },
-  selectedSportText: { color: '#fff' },
-  metrics: { marginTop: 32, backgroundColor: '#fff', borderRadius: 16, padding: 24, gap: 24 },
-  metric: { gap: 6 },
-  metricValue: { color: '#18271e', fontSize: 28, fontWeight: '600' },
-  hint: { color: '#46574b', fontSize: 14, marginTop: 12 },
-  action: {
-    backgroundColor: '#28563a',
-    minHeight: 56,
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginTop: 32,
-  },
-  stopAction: { backgroundColor: '#a13232' },
-  actionText: { color: '#fff', fontSize: 18, fontWeight: '700' },
+  selectedSport: { backgroundColor: colors.accent, borderColor: colors.accent },
+  sportText: { ...typography.body, color: colors.accent, fontWeight: '600' },
+  selectedSportText: { color: colors.onAccent },
+  metrics: { marginTop: spacing.xxl, backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.xl, gap: spacing.xl },
+  hint: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.md },
+  action: { marginTop: spacing.xxl },
   pressed: { opacity: 0.75 },
 });
