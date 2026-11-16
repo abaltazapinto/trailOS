@@ -16,6 +16,7 @@
       "expo-sqlite",
       "expo-secure-store",
       "expo-system-ui",
+      "@maplibre/maplibre-react-native",
       [
         "expo-status-bar",
         {

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as Location from 'expo-location';
+import { useCurrentPosition } from '@maplibre/maplibre-react-native';
 
+import RouteMap from '../components/RouteMap';
 import type { Activity, GpsTrackPoint, Sport } from '../domain/activity';
 import { calculateAverageSpeed, calculateDuration, calculateTrackDistance } from '../domain/activityMetrics';
 import GarminCard from '../integrations/garmin/GarminCard';
@@ -39,6 +41,19 @@ export default function ActivityRecorderScreen() {
     && !saving && !pendingActivity;
   const distance = useMemo(() => calculateTrackDistance(trackPoints), [trackPoints]);
   const averageSpeed = calculateAverageSpeed(distance, duration);
+  // SPIKE (#8 phase A): temporary map preview with a test line near the user.
+  // Replaced by the phase D layout.
+  const spikePosition = useCurrentPosition({ enabled: permission?.granted === true });
+  const spikeTrack = useMemo<GpsTrackPoint[]>(() => {
+    if (!spikePosition) return [];
+    const { latitude, longitude } = spikePosition.coords;
+    const offset = 0.001; // degrees, about 110 m
+    return [
+      { latitude, longitude },
+      { latitude: latitude + offset, longitude },
+      { latitude: latitude + offset, longitude: longitude + offset },
+    ];
+  }, [spikePosition]);
   const metrics = [
     { label: 'Duration', ...formatDuration(duration) },
     { label: 'Distance', ...formatDistance(distance) },
@@ -225,6 +240,15 @@ export default function ActivityRecorderScreen() {
         {isRecording ? 'Recording' : canStart ? 'Idle · Ready to start' : 'Idle'}
       </Text>
 
+      <View style={styles.spikeMap}>
+        <RouteMap
+          track={isRecording ? trackPoints : spikeTrack}
+          showUserLocation={permission?.granted === true}
+          followUser
+          style={StyleSheet.absoluteFill}
+        />
+      </View>
+
       <Text accessibilityLiveRegion="polite" style={styles.label}>
         {permissionMessage}
       </Text>
@@ -339,5 +363,6 @@ const styles = StyleSheet.create({
   metrics: { marginTop: spacing.xxl, backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.xl, gap: spacing.xl },
   hint: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.md },
   action: { marginTop: spacing.xxl },
+  spikeMap: { height: 280, borderRadius: radius.lg, overflow: 'hidden', marginBottom: spacing.xl },
   pressed: { opacity: 0.75 },
 });
