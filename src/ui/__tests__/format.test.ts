@@ -38,10 +38,12 @@ test('formats distance in kilometers with two decimal places', () => {
   expect(formatDistance(0)).toEqual({ value: '0.00', unit: 'km' });
 });
 
-test('formats elapsed seconds without rounding up or wrapping at 24 hours', () => {
-  expect(formatDuration(0)).toEqual({ value: '00:00:00', unit: 'h:m:s' });
-  expect(formatDuration(59.9)).toEqual({ value: '00:00:59', unit: 'h:m:s' });
-  expect(formatDuration(3661)).toEqual({ value: '01:01:01', unit: 'h:m:s' });
+test('formats elapsed seconds compactly, without rounding up or wrapping at 24 hours', () => {
+  expect(formatDuration(0)).toEqual({ value: '0:00', unit: 'h:m:s' });
+  expect(formatDuration(59.9)).toEqual({ value: '0:59', unit: 'h:m:s' });
+  expect(formatDuration(3599)).toEqual({ value: '59:59', unit: 'h:m:s' });
+  expect(formatDuration(3600)).toEqual({ value: '1:00:00', unit: 'h:m:s' });
+  expect(formatDuration(3661)).toEqual({ value: '1:01:01', unit: 'h:m:s' });
   expect(formatDuration(90061)).toEqual({ value: '25:01:01', unit: 'h:m:s' });
 });
 
@@ -58,6 +60,12 @@ describe('pace', () => {
     expect(formatPace(1000 / 359.6)).toEqual({ value: '6:00', unit: '/km' });
     expect(formatPace(1000 / 359.4)).toEqual({ value: '5:59', unit: '/km' });
     expect(formatPace(1000 / 59.6)).toEqual({ value: '1:00', unit: '/km' });
+  });
+
+  test('treats paces slower than 59:59 /km as unavailable', () => {
+    expect(formatPace(1000 / 3599)).toEqual({ value: '59:59', unit: '/km' });
+    expect(formatPace(1000 / 3600)).toEqual({ value: '--', unit: '/km' });
+    expect(formatPace(5 / 600)).toEqual({ value: '--', unit: '/km' });
   });
 });
 

@@ -37,8 +37,9 @@ const spokenUnits: Record<MetricUnit, string> = {
 function metricMeaning(label: string, value: string, unit: MetricUnit): string {
   if (value === '--') return `${label}, unavailable, ${spokenUnits[unit]}`;
   if (unit === 'h:m:s') {
-    const [hours, minutes, seconds] = value.split(':').map(Number);
-    return `${label}, ${hours} hours, ${minutes} minutes, ${seconds} seconds`;
+    const parts = value.split(':').map(Number);
+    const [hours, minutes, seconds] = parts.length === 3 ? parts : [0, ...parts];
+    return `${label}, ${hours > 0 ? `${hours} hours, ` : ''}${minutes} minutes, ${seconds} seconds`;
   }
   if (unit === '/km') {
     const [minutes, seconds] = value.split(':').map(Number);
@@ -67,6 +68,9 @@ export default function Metric({
       <Text style={styles.label}>{label}</Text>
       <Text
         maxFontSizeMultiplier={maxFontSizeMultiplier}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.5}
         style={[valueStyles[variant], { color: colors[color] }]}
       >
         {value}
